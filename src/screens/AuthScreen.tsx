@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -14,26 +14,75 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../contexts/AuthContext';
+import PasswordStrengthIndicator from '../components/PasswordStrengthIndicator';
+import ValidationMessage from '../components/ValidationMessage';
 
 const AuthScreen = () => {
   const [isLogin, setIsLogin] = useState(true);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [name, setName] = useState('');
   const [partnerEmail, setPartnerEmail] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [validationMessages, setValidationMessages] = useState<{
+    email?: string;
+    password?: string;
+    confirmPassword?: string;
+    name?: string;
+    partnerEmail?: string;
+  }>({});
 
-  const { login, register, error, clearError } = useAuth();
+  const { login, register, error, clearError, validatePassword, validateEmail } = useAuth();
+
+  // Validation en temps réel
+  useEffect(() => {
+    const messages: typeof validationMessages = {};
+
+    // Validation de l'email
+    if (email && !validateEmail(email)) {
+      messages.email = 'Adresse email invalide';
+    }
+
+    // Validation du mot de passe
+    if (password && !validatePassword(password)) {
+      messages.password = 'Le mot de passe doit contenir au moins 8 caractères, une majuscule, une minuscule et un chiffre';
+    }
+
+    // Validation de la confirmation du mot de passe
+    if (!isLogin && confirmPassword && password !== confirmPassword) {
+      messages.confirmPassword = 'Les mots de passe ne correspondent pas';
+    }
+
+    // Validation du nom
+    if (!isLogin && name && name.trim().length < 2) {
+      messages.name = 'Le nom doit contenir au moins 2 caractères';
+    }
+
+    // Validation de l'email du partenaire (obligatoire)
+    if (!isLogin) {
+      if (!partnerEmail) {
+        messages.partnerEmail = 'L\'email de votre partenaire est obligatoire';
+      } else if (!validateEmail(partnerEmail)) {
+        messages.partnerEmail = 'Adresse email invalide pour votre partenaire';
+      }
+    }
+
+    setValidationMessages(messages);
+  }, [email, password, confirmPassword, name, partnerEmail, isLogin, validateEmail, validatePassword]);
 
   const handleSubmit = async () => {
-    if (!email || !password || (!isLogin && !name)) {
+    // Validation des champs obligatoires
+    if (!email || !password || (!isLogin && !name) || (!isLogin && !partnerEmail)) {
       Alert.alert('Erreur', 'Veuillez remplir tous les champs obligatoires');
       return;
     }
 
-    if (!isLogin && password.length < 6) {
-      Alert.alert('Erreur', 'Le mot de passe doit contenir au moins 6 caractères');
+    // Vérifier s'il y a des erreurs de validation
+    if (Object.keys(validationMessages).length > 0) {
+      Alert.alert('Erreur', 'Veuillez corriger les erreurs de validation');
       return;
     }
 
@@ -48,7 +97,7 @@ const AuthScreen = () => {
           name,
           email,
           password,
-          partnerEmail: partnerEmail || undefined,
+          partnerEmail: partnerEmail,
         });
       }
     } catch (error) {
@@ -62,9 +111,33 @@ const AuthScreen = () => {
     setIsLogin(!isLogin);
     setEmail('');
     setPassword('');
+    setConfirmPassword('');
     setName('');
     setPartnerEmail('');
+    setShowPassword(false);
+    setShowConfirmPassword(false);
+    setValidationMessages({});
     clearError();
+  };
+
+  const isFormValid = () => {
+    if (isLogin) {
+      return email && password && !validationMessages.email && !validationMessages.password;
+    } else {
+      return (
+        email && 
+        password && 
+        name && 
+        confirmPassword && 
+        partnerEmail &&
+        password === confirmPassword &&
+        !validationMessages.email && 
+        !validationMessages.password && 
+        !validationMessages.name && 
+        !validationMessages.confirmPassword &&
+        !validationMessages.partnerEmail
+      );
+    }
   };
 
   return (
@@ -72,8 +145,15 @@ const AuthScreen = () => {
       <KeyboardAvoidingView
         style={styles.container}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
       >
-        <ScrollView contentContainerStyle={styles.scrollContent}>
+        <ScrollView 
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+          bounces={true}
+          alwaysBounceVertical={false}
+          keyboardShouldPersistTaps="handled"
+        >
           {/* Header */}
           <View style={styles.header}>
             <View style={styles.logoContainer}>
@@ -83,6 +163,36 @@ const AuthScreen = () => {
               <Text style={styles.appName}>CouPle</Text>
               <Text style={styles.tagline}>Votre amour, organisé</Text>
             </View>
+          </View>
+
+          {/* Mode Toggle */}
+          <View style={styles.modeToggleContainer}>
+            <TouchableOpacity
+              style={[styles.modeToggleButton, isLogin && styles.modeToggleButtonActive]}
+              onPress={() => !isLogin && toggleAuthMode()}
+            >
+              <Ionicons 
+                name="log-in" 
+                size={20} 
+                color={isLogin ? '#FF6B9D' : '#7F8C8D'} 
+              />
+              <Text style={[styles.modeToggleText, isLogin && styles.modeToggleTextActive]}>
+                Connexion
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.modeToggleButton, !isLogin && styles.modeToggleButtonActive]}
+              onPress={() => isLogin && toggleAuthMode()}
+            >
+              <Ionicons 
+                name="person-add" 
+                size={20} 
+                color={!isLogin ? '#FF6B9D' : '#7F8C8D'} 
+              />
+              <Text style={[styles.modeToggleText, !isLogin && styles.modeToggleTextActive]}>
+                Inscription
+              </Text>
+            </TouchableOpacity>
           </View>
 
           {/* Auth Form */}
@@ -97,81 +207,146 @@ const AuthScreen = () => {
             </Text>
 
             {!isLogin && (
-              <View style={styles.inputContainer}>
-                <Ionicons name="person" size={20} color="#7F8C8D" style={styles.inputIcon} />
-                <TextInput
-                  style={styles.input}
-                  placeholder="Votre nom"
-                  value={name}
-                  onChangeText={setName}
-                  autoCapitalize="words"
-                  autoCorrect={false}
+              <View>
+                <View style={styles.inputContainer}>
+                  <Ionicons name="person" size={20} color="#7F8C8D" style={styles.inputIcon} />
+                  <TextInput
+                    style={[styles.input, validationMessages.name && styles.inputError]}
+                    placeholder="Votre nom *"
+                    value={name}
+                    onChangeText={setName}
+                    autoCapitalize="words"
+                    autoCorrect={false}
+                  />
+                </View>
+                <ValidationMessage
+                  type="error"
+                  message={validationMessages.name || ''}
+                  visible={!!validationMessages.name}
                 />
               </View>
             )}
 
-            <View style={styles.inputContainer}>
-              <Ionicons name="mail" size={20} color="#7F8C8D" style={styles.inputIcon} />
-              <TextInput
-                style={styles.input}
-                placeholder="Adresse email"
-                value={email}
-                onChangeText={setEmail}
-                keyboardType="email-address"
-                autoCapitalize="none"
-                autoCorrect={false}
-              />
-            </View>
-
-            {!isLogin && (
+            <View>
               <View style={styles.inputContainer}>
-                <Ionicons name="heart" size={20} color="#7F8C8D" style={styles.inputIcon} />
+                <Ionicons name="mail" size={20} color="#7F8C8D" style={styles.inputIcon} />
                 <TextInput
-                  style={styles.input}
-                  placeholder="Email de votre partenaire (optionnel)"
-                  value={partnerEmail}
-                  onChangeText={setPartnerEmail}
+                  style={[styles.input, validationMessages.email && styles.inputError]}
+                  placeholder="Adresse email *"
+                  value={email}
+                  onChangeText={setEmail}
                   keyboardType="email-address"
                   autoCapitalize="none"
                   autoCorrect={false}
                 />
               </View>
-            )}
-
-            <View style={styles.inputContainer}>
-              <Ionicons name="lock-closed" size={20} color="#7F8C8D" style={styles.inputIcon} />
-              <TextInput
-                style={styles.input}
-                placeholder="Mot de passe"
-                value={password}
-                onChangeText={setPassword}
-                secureTextEntry={!showPassword}
-                autoCapitalize="none"
-                autoCorrect={false}
+              <ValidationMessage
+                type="error"
+                message={validationMessages.email || ''}
+                visible={!!validationMessages.email}
               />
-              <TouchableOpacity
-                style={styles.passwordToggle}
-                onPress={() => setShowPassword(!showPassword)}
-              >
-                <Ionicons
-                  name={showPassword ? 'eye-off' : 'eye'}
-                  size={20}
-                  color="#7F8C8D"
-                />
-              </TouchableOpacity>
             </View>
 
-            {error && (
-              <View style={styles.errorContainer}>
-                <Ionicons name="alert-circle" size={16} color="#FF6B6B" />
-                <Text style={styles.errorText}>{error}</Text>
+            {!isLogin && (
+              <View>
+                <View style={styles.inputContainer}>
+                  <Ionicons name="heart" size={20} color="#7F8C8D" style={styles.inputIcon} />
+                  <TextInput
+                    style={[styles.input, validationMessages.partnerEmail && styles.inputError]}
+                    placeholder="Email de votre partenaire *"
+                    value={partnerEmail}
+                    onChangeText={setPartnerEmail}
+                    keyboardType="email-address"
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                  />
+                </View>
+                <ValidationMessage
+                  type="error"
+                  message={validationMessages.partnerEmail || ''}
+                  visible={!!validationMessages.partnerEmail}
+                />
               </View>
             )}
 
+            <View>
+              <View style={styles.inputContainer}>
+                <Ionicons name="lock-closed" size={20} color="#7F8C8D" style={styles.inputIcon} />
+                <TextInput
+                  style={[styles.input, validationMessages.password && styles.inputError]}
+                  placeholder="Mot de passe *"
+                  value={password}
+                  onChangeText={setPassword}
+                  secureTextEntry={!showPassword}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                />
+                <TouchableOpacity
+                  style={styles.passwordToggle}
+                  onPress={() => setShowPassword(!showPassword)}
+                >
+                  <Ionicons
+                    name={showPassword ? 'eye-off' : 'eye'}
+                    size={20}
+                    color="#7F8C8D"
+                  />
+                </TouchableOpacity>
+              </View>
+              {!isLogin && <PasswordStrengthIndicator password={password} />}
+              <ValidationMessage
+                type="error"
+                message={validationMessages.password || ''}
+                visible={!!validationMessages.password}
+              />
+            </View>
+
+            {!isLogin && (
+              <View>
+                <View style={styles.inputContainer}>
+                  <Ionicons name="lock-closed" size={20} color="#7F8C8D" style={styles.inputIcon} />
+                  <TextInput
+                    style={[styles.input, validationMessages.confirmPassword && styles.inputError]}
+                    placeholder="Confirmer le mot de passe *"
+                    value={confirmPassword}
+                    onChangeText={setConfirmPassword}
+                    secureTextEntry={!showConfirmPassword}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                  />
+                  <TouchableOpacity
+                    style={styles.passwordToggle}
+                    onPress={() => setShowConfirmPassword(!showConfirmPassword)}
+                  >
+                    <Ionicons
+                      name={showConfirmPassword ? 'eye-off' : 'eye'}
+                      size={20}
+                      color="#7F8C8D"
+                    />
+                  </TouchableOpacity>
+                </View>
+                <ValidationMessage
+                  type="error"
+                  message={validationMessages.confirmPassword || ''}
+                  visible={!!validationMessages.confirmPassword}
+                />
+              </View>
+            )}
+
+            {error && (
+              <ValidationMessage
+                type="error"
+                message={error}
+                visible={true}
+              />
+            )}
+
             <TouchableOpacity
-              style={[styles.submitButton, isLoading && styles.submitButtonDisabled]}
+              style={[
+                styles.submitButton, 
+                (!isFormValid() || isLoading) && styles.submitButtonDisabled
+              ]}
               onPress={handleSubmit}
-              disabled={isLoading}
+              disabled={!isFormValid() || isLoading}
             >
               {isLoading ? (
                 <ActivityIndicator color="white" />
@@ -238,12 +413,13 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     flexGrow: 1,
-    paddingBottom: 20,
+    paddingBottom: 40,
+    minHeight: '100%',
   },
   header: {
     alignItems: 'center',
-    paddingTop: 60,
-    paddingBottom: 40,
+    paddingTop: 40,
+    paddingBottom: 20,
   },
   logoContainer: {
     alignItems: 'center',
@@ -269,6 +445,40 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#7F8C8D',
     fontStyle: 'italic',
+  },
+  modeToggleContainer: {
+    flexDirection: 'row',
+    marginHorizontal: 20,
+    marginBottom: 20,
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  modeToggleButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    gap: 8,
+  },
+  modeToggleButtonActive: {
+    backgroundColor: '#FFF5F7',
+  },
+  modeToggleText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#7F8C8D',
+  },
+  modeToggleTextActive: {
+    color: '#FF6B9D',
   },
   formContainer: {
     backgroundColor: '#fff',
@@ -299,12 +509,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: '#F8F9FA',
     borderRadius: 12,
-    marginBottom: 16,
+    marginBottom: 8,
     paddingHorizontal: 16,
     paddingVertical: 4,
-  },
-  inputIcon: {
-    marginRight: 12,
+    borderWidth: 1,
+    borderColor: 'transparent',
   },
   input: {
     flex: 1,
@@ -312,21 +521,14 @@ const styles = StyleSheet.create({
     color: '#2C3E50',
     paddingVertical: 16,
   },
+  inputError: {
+    borderColor: '#FF6B6B',
+  },
+  inputIcon: {
+    marginRight: 12,
+  },
   passwordToggle: {
     padding: 8,
-  },
-  errorContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#FFF5F5',
-    borderRadius: 8,
-    padding: 12,
-    marginBottom: 16,
-  },
-  errorText: {
-    color: '#FF6B6B',
-    fontSize: 14,
-    marginLeft: 8,
   },
   submitButton: {
     backgroundColor: '#FF6B9D',
@@ -388,7 +590,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     marginTop: 30,
-    marginBottom: 20,
+    marginBottom: 30,
+    paddingHorizontal: 20,
   },
   footerText: {
     color: '#7F8C8D',
@@ -401,6 +604,7 @@ const styles = StyleSheet.create({
   },
   termsContainer: {
     paddingHorizontal: 20,
+    paddingBottom: 20,
   },
   termsText: {
     color: '#7F8C8D',
